@@ -1,0 +1,107 @@
+{
+  "entities": {
+    "User": {
+      "title": "User Profile",
+      "description": "User profile with balance and role",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "email": { "type": "string", "format": "email" },
+        "displayName": { "type": "string" },
+        "role": { "type": "string", "enum": ["superadmin", "admin", "user"] },
+        "balance": { "type": "number" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["uid", "email", "role", "balance"]
+    },
+    "AdminAccount": {
+      "title": "Admin Account",
+      "description": "Normal admin credentials created by Super Admin",
+      "type": "object",
+      "properties": {
+        "email": { "type": "string", "format": "email" },
+        "password": { "type": "string" },
+        "name": { "type": "string" },
+        "role": { "type": "string", "enum": ["admin"] },
+        "status": { "type": "string", "enum": ["active", "revoked"] },
+        "createdAt": { "type": "string" },
+        "createdBy": { "type": "string" }
+      },
+      "required": ["email", "password", "status", "createdBy"]
+    },
+    "Service": {
+      "title": "SMM Service",
+      "description": "Instagram SMM service offering",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "category": { "type": "string" },
+        "ratePer1000": { "type": "number" },
+        "min": { "type": "number" },
+        "max": { "type": "number" },
+        "speed": { "type": "string" },
+        "guarantee": { "type": "string" },
+        "description": { "type": "string" },
+        "active": { "type": "boolean" }
+      },
+      "required": ["name", "category", "ratePer1000", "min", "max", "active"]
+    },
+    "Order": {
+      "title": "SMM Order",
+      "description": "Instagram growth service order",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "userEmail": { "type": "string" },
+        "serviceId": { "type": "string" },
+        "serviceName": { "type": "string" },
+        "target": { "type": "string" },
+        "quantity": { "type": "number" },
+        "charge": { "type": "number" },
+        "startCount": { "type": "number" },
+        "remains": { "type": "number" },
+        "status": { "type": "string", "enum": ["pending", "processing", "in_progress", "completed", "canceled"] },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["userId", "serviceId", "serviceName", "target", "quantity", "charge", "status", "createdAt"]
+    },
+    "SupportTicket": {
+      "title": "Support Ticket",
+      "description": "Customer support query or order inquiry",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "userEmail": { "type": "string" },
+        "subject": { "type": "string" },
+        "orderId": { "type": "string" },
+        "message": { "type": "string" },
+        "status": { "type": "string", "enum": ["open", "answered", "closed"] },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["userId", "subject", "message", "status", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "User profiles and wallet balance"
+    },
+    "/admin_accounts/{adminId}": {
+      "schema": "AdminAccount",
+      "description": "Super admin created credentials for normal admins"
+    },
+    "/services/{serviceId}": {
+      "schema": "Service",
+      "description": "Available Instagram services and pricing"
+    },
+    "/orders/{orderId}": {
+      "schema": "Order",
+      "description": "Instagram growth orders"
+    },
+    "/tickets/{ticketId}": {
+      "schema": "SupportTicket",
+      "description": "Customer support inquiries"
+    }
+  }
+}

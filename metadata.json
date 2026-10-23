@@ -1,0 +1,6 @@
+{
+  "name": "InstaGrow - Instagram Growth Platform",
+  "description": "High-speed Instagram growth service provider with simple dashboard, live order tracking, and multi-tier Super Admin and Admin controls.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
