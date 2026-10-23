@@ -3,8 +3,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect } from 'react';
-import { AuthProvider, useAuth } from './context/AuthContext';
+import React, { useState } from 'react';
+import { AuthProvider } from './context/AuthContext';
 import { Navbar } from './components/Navbar';
 import { CustomerDashboard } from './components/CustomerDashboard';
 import { OrdersList } from './components/OrdersList';
@@ -24,10 +24,8 @@ import {
 } from 'lucide-react';
 
 const MainContent: React.FC = () => {
-  const { isSuperAdmin, isAdmin } = useAuth();
-  const [currentTab, setCurrentTab] = useState<string>(() => {
-    return isSuperAdmin ? 'admin-panel' : 'new-order';
-  });
+  // Always land on user panel ('new-order') by default for all visitors & accounts
+  const [currentTab, setCurrentTab] = useState<string>('new-order');
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [isAddFundsModalOpen, setIsAddFundsModalOpen] = useState(false);
   const [addFundsOptions, setAddFundsOptions] = useState<{
@@ -48,12 +46,7 @@ const MainContent: React.FC = () => {
     setIsAddFundsModalOpen(true);
   };
 
-  // When super admin logs in, ensure admin-panel can be shown
-  useEffect(() => {
-    if (isSuperAdmin && currentTab === 'super-admin') {
-      setCurrentTab('admin-panel');
-    }
-  }, [isSuperAdmin]);
+
 
   const [selectedServiceForOrder, setSelectedServiceForOrder] = useState<string | undefined>(undefined);
   const [guideNotice, setGuideNotice] = useState<string | null>(null);
@@ -149,10 +142,9 @@ const MainContent: React.FC = () => {
       <AuthModal
         isOpen={isAuthModalOpen}
         onClose={() => setIsAuthModalOpen(false)}
-        onLoginSuccess={(role) => {
-          if (role === 'superadmin' || role === 'admin') {
-            setCurrentTab('admin-panel');
-          }
+        onLoginSuccess={() => {
+          // Always stay on the user panel so user/admin can place orders directly
+          setCurrentTab('new-order');
         }}
       />
 
