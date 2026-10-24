@@ -27,6 +27,7 @@ export const DEFAULT_SERVICES: GrowthService[] = [
     description: 'Complimentary trial of our active Instagram delivery network. Test delivery at zero cost.',
     active: true,
     isFree: true,
+    fixedQuantity: 50,
   },
   {
     id: 'ig-free-ree',
@@ -40,6 +41,7 @@ export const DEFAULT_SERVICES: GrowthService[] = [
     description: 'Instant reels view boost at ₹0.00 to test our high-retention explore node algorithms.',
     active: true,
     isFree: true,
+    fixedQuantity: 200,
   },
   {
     id: 'ig-free-lik',
@@ -53,6 +55,7 @@ export const DEFAULT_SERVICES: GrowthService[] = [
     description: 'Fast active post likes completely free. No wallet balance required.',
     active: true,
     isFree: true,
+    fixedQuantity: 30,
   },
   {
     id: 'ig-fol-budget',

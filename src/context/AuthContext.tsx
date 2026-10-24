@@ -9,7 +9,7 @@ import {
   onAuthStateChanged,
   db
 } from '../firebase';
-import { doc, getDoc, setDoc, updateDoc } from 'firebase/firestore';
+import { doc, getDoc, setDoc, updateDoc, collection, onSnapshot } from 'firebase/firestore';
 import { AppUser, UserRole, AdminAccount, GrowthService, GrowthOrder, SupportTicket, Transaction, PaymentRequest, UpiConfig, GuideConfig } from '../types';
 import {
   SUPER_ADMIN_EMAIL,
@@ -61,6 +61,7 @@ interface AuthContextType {
   toggleAdminStatus: (adminId: string) => Promise<void>;
   deleteAdminAccount: (adminId: string) => Promise<void>;
   updateServiceRate: (serviceId: string, newRate: number, active?: boolean) => Promise<void>;
+  updateServiceConfig: (serviceId: string, updates: Partial<GrowthService>) => Promise<void>;
   addNewService: (service: Omit<GrowthService, 'id'>) => Promise<void>;
   adjustUserBalance: (userId: string, deltaAmount: number) => Promise<void>;
   // Admin & User actions
@@ -245,6 +246,38 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   useEffect(() => {
     localStorage.setItem(LS_TICKETS_KEY, JSON.stringify(tickets));
   }, [tickets]);
+
+  // Real-time synchronization of Firestore orders so all orders always appear across sessions
+  useEffect(() => {
+    try {
+      const ordersCol = collection(db, 'orders');
+      const unsubscribe = onSnapshot(ordersCol, (snapshot) => {
+        if (!snapshot.empty) {
+          const remoteList: GrowthOrder[] = [];
+          snapshot.forEach(docSnap => {
+            const data = docSnap.data() as GrowthOrder;
+            if (data && data.id) {
+              remoteList.push(data);
+            }
+          });
+          setOrders(prev => {
+            const map = new Map<string, GrowthOrder>();
+            INITIAL_SAMPLE_ORDERS.forEach(o => map.set(o.id, o));
+            prev.forEach(o => map.set(o.id, o));
+            remoteList.forEach(o => map.set(o.id, o));
+            return Array.from(map.values()).sort(
+              (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+            );
+          });
+        }
+      }, (err) => {
+        console.warn('Orders Firestore snapshot note:', err.message);
+      });
+      return () => unsubscribe();
+    } catch (e) {
+      console.warn('Failed to listen to orders collection:', e);
+    }
+  }, []);
 
   // Monitor Firebase Auth state
   useEffect(() => {
@@ -820,19 +853,32 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     setAdminAccounts(prev => prev.filter(a => a.id !== adminId));
   };
 
-  // Super Admin: Update service rate or toggle active
-  const updateServiceRate = async (serviceId: string, newRate: number, active?: boolean) => {
-    if (!isSuperAdmin) throw new Error('Unauthorized: Only Super Admin can adjust pricing.');
+  // Super Admin: Update full service config (Rate, Free status, Fixed Quantity, Min, Max, Active)
+  const updateServiceConfig = async (serviceId: string, updates: Partial<GrowthService>) => {
+    if (!isSuperAdmin) throw new Error('Unauthorized: Only Super Admin can adjust services.');
     setServices(prev => prev.map(s => {
       if (s.id === serviceId) {
+        const isFree = updates.isFree !== undefined ? updates.isFree : s.isFree;
+        const newRate = isFree ? 0 : (updates.ratePer1000 !== undefined ? updates.ratePer1000 : s.ratePer1000);
         return {
           ...s,
+          ...updates,
           ratePer1000: newRate,
-          active: active !== undefined ? active : s.active
+          isFree,
+          category: isFree ? 'free' : (updates.category || s.category),
+          fixedQuantity: updates.fixedQuantity !== undefined ? updates.fixedQuantity : s.fixedQuantity
         };
       }
       return s;
     }));
+  };
+
+  // Super Admin: Update service rate or toggle active
+  const updateServiceRate = async (serviceId: string, newRate: number, active?: boolean) => {
+    await updateServiceConfig(serviceId, {
+      ratePer1000: newRate,
+      active: active !== undefined ? active : true
+    });
   };
 
   // Super Admin: Add new service
@@ -876,11 +922,16 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     if (!service) return { success: false, message: 'Selected service does not exist.' };
     if (!service.active) return { success: false, message: 'This service is currently disabled.' };
 
-    if (quantity < service.min) return { success: false, message: `Minimum order quantity is ${service.min.toLocaleString()}.` };
-    if (quantity > service.max) return { success: false, message: `Maximum order quantity is ${service.max.toLocaleString()}.` };
-
     const isFree = Boolean(service.isFree || service.ratePer1000 === 0 || service.category === 'free');
-    const cost = isFree ? 0 : +((quantity / 1000) * service.ratePer1000).toFixed(2);
+    // Enforce fixed quantity if preset by Admin so users cannot add any arbitrary quantity
+    const finalQuantity = service.fixedQuantity || (isFree ? (service.fixedQuantity || 50) : quantity);
+
+    if (!service.fixedQuantity) {
+      if (finalQuantity < service.min) return { success: false, message: `Minimum order quantity is ${service.min.toLocaleString()}.` };
+      if (finalQuantity > service.max) return { success: false, message: `Maximum order quantity is ${service.max.toLocaleString()}.` };
+    }
+
+    const cost = isFree ? 0 : +((finalQuantity / 1000) * service.ratePer1000).toFixed(2);
     const userBalance = currentUser?.balance ?? 0;
 
     if (cost > 0 && userBalance < cost) {
@@ -906,10 +957,10 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       serviceName: service.name,
       category: service.category,
       target: target.trim(),
-      quantity,
+      quantity: finalQuantity,
       charge: cost,
       startCount: Math.floor(Math.random() * 800) + 120,
-      remains: quantity,
+      remains: finalQuantity,
       status: 'pending',
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
@@ -1058,6 +1109,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         toggleAdminStatus,
         deleteAdminAccount,
         updateServiceRate,
+        updateServiceConfig,
         addNewService,
         adjustUserBalance,
         placeOrder,

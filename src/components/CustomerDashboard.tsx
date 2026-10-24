@@ -47,7 +47,8 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({
     return initialServiceId || services[0]?.id || 'ig-fol-budget';
   });
   const [targetLink, setTargetLink] = useState<string>('@your_profile');
-  const [quantity, setQuantity] = useState<number>(500);
+  // String state allows cutting/backspacing all the way to empty without jumping back
+  const [quantityInput, setQuantityInput] = useState<string>('500');
   const [submitting, setSubmitting] = useState(false);
   const [orderResult, setOrderResult] = useState<{ success: boolean; message: string; orderId?: string } | null>(null);
   const [placedOrderModal, setPlacedOrderModal] = useState<{
@@ -65,6 +66,9 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({
       const s = services.find(x => x.id === initialServiceId);
       if (s) {
         setSelectedCategory(s.category);
+        if (s.fixedQuantity) {
+          setQuantityInput(s.fixedQuantity.toString());
+        }
       }
     }
   }, [initialServiceId, services]);
@@ -87,6 +91,21 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({
     )
   );
 
+  // Determine if service has a fixed quantity configured from before by Admin
+  const isFixedQuantity = Boolean(
+    activeService && (
+      Boolean(activeService.fixedQuantity) ||
+      (isFreeService && Boolean(activeService.fixedQuantity))
+    )
+  );
+
+  const fixedQtyValue = activeService?.fixedQuantity || (isFreeService ? 50 : 100);
+
+  // Numerical quantity used for proportional calculation and ordering
+  const parsedInput = parseInt(quantityInput, 10);
+  const rawQuantity = isNaN(parsedInput) ? 0 : parsedInput;
+  const quantity = isFixedQuantity ? fixedQtyValue : rawQuantity;
+
   // Automatic proportional cost calculation in INR (₹)
   // If free service, price is ₹0.00
   const calculatedCharge = isFreeService
@@ -106,8 +125,13 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({
     const firstInCategory = services.find(s => s.category === cat && s.active);
     if (firstInCategory) {
       setSelectedServiceId(firstInCategory.id);
-      if (quantity < firstInCategory.min) {
-        setQuantity(firstInCategory.min);
+      if (firstInCategory.fixedQuantity) {
+        setQuantityInput(firstInCategory.fixedQuantity.toString());
+      } else {
+        const cur = parseInt(quantityInput, 10) || 0;
+        if (cur < firstInCategory.min) {
+          setQuantityInput(firstInCategory.min.toString());
+        }
       }
     }
   };
@@ -116,8 +140,15 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({
     setSelectedServiceId(serviceId);
     const s = services.find(x => x.id === serviceId);
     if (s) {
-      if (quantity < s.min) {
-        setQuantity(s.min);
+      if (s.fixedQuantity) {
+        setQuantityInput(s.fixedQuantity.toString());
+      } else if (s.isFree) {
+        setQuantityInput((s.fixedQuantity || 50).toString());
+      } else {
+        const cur = parseInt(quantityInput, 10) || 0;
+        if (cur < s.min) {
+          setQuantityInput(s.min.toString());
+        }
       }
     }
   };
@@ -398,76 +429,140 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({
             {/* 4. Quantity Selector & Automatic Proportional Math */}
             <div>
               <div className="flex items-center justify-between mb-2">
-                <label className="text-xs font-bold text-slate-300 uppercase tracking-wider">
-                  4. Quantity
+                <label className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center space-x-1.5">
+                  <span>4. Quantity</span>
+                  {isFixedQuantity && (
+                    <span className="text-[10px] font-black uppercase text-[#35d6c0] bg-[#35d6c0]/15 px-2 py-0.5 rounded-full border border-[#35d6c0]/30 flex items-center space-x-1">
+                      <Lock className="w-3 h-3" />
+                      <span>Fixed by Admin</span>
+                    </span>
+                  )}
                 </label>
                 <span className="text-xs text-slate-400">
-                  Min: {activeService?.min?.toLocaleString()} • Max: {activeService?.max?.toLocaleString()}
+                  {isFixedQuantity
+                    ? `Fixed Quota: ${fixedQtyValue.toLocaleString()} Units`
+                    : `Min: ${activeService?.min?.toLocaleString()} • Max: ${activeService?.max?.toLocaleString()}`}
                 </span>
               </div>
 
-              {/* Number Input with 3D Depth */}
-              <div className="relative">
-                <input
-                  type="number"
-                  min={activeService?.min || 50}
-                  max={activeService?.max || 1000000}
-                  step={50}
-                  value={quantity}
-                  onChange={(e) => setQuantity(Math.max(1, Number(e.target.value) || 0))}
-                  className="w-full bg-[#0d1224] border border-[#252f52] rounded-2xl px-4 py-3 text-2xl font-black text-white focus:outline-none focus:border-[#35d6c0] transition-colors shadow-inner font-mono"
-                />
-                <div className="absolute right-4 top-3.5 text-xs text-slate-400 font-bold uppercase tracking-wider">
-                  Units
-                </div>
-              </div>
-
-              {/* Direct Preset Buttons with 3D Tactile Styling */}
-              <div className="mt-3">
-                <div className="flex flex-wrap gap-1.5">
-                  {[100, 500, 1000, 2500, 5000, 10000, 20000].map(amt => {
-                    const isSelected = quantity === amt;
-                    const isHalf = amt === 500;
-                    return (
-                      <button
-                        key={amt}
-                        type="button"
-                        onClick={() => setQuantity(amt)}
-                        className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center space-x-1.5 active:translate-y-0.5 ${
-                          isSelected
-                            ? 'bg-gradient-to-b from-[#35d6c0] via-[#2cc3b0] to-[#1ea897] text-[#09131d] font-black shadow-md shadow-[#35d6c0]/25 border-t border-white/50'
-                            : 'bg-[#0d1224] border border-[#1e2646] hover:border-[#35d6c0]/40 text-slate-300 hover:text-white'
-                        }`}
-                      >
-                        <span>{amt.toLocaleString()}</span>
-                        {isHalf && (
-                          <span className={`text-[9px] px-1 py-0.2 rounded font-extrabold uppercase ${
-                            isSelected ? 'bg-black/20 text-black' : 'bg-[#35d6c0]/20 text-[#35d6c0]'
-                          }`}>
-                            50% Base
+              {/* If service has fixed quantity (free or fixed package), lock it so user cannot type arbitrary quantity */}
+              {isFixedQuantity ? (
+                <div className="space-y-2">
+                  <div className="w-full bg-[#0d1224] border border-[#35d6c0]/40 rounded-2xl p-4 flex items-center justify-between shadow-inner">
+                    <div className="flex items-center space-x-3.5">
+                      <div className="w-12 h-12 rounded-xl bg-[#35d6c0]/15 border border-[#35d6c0]/30 flex items-center justify-center text-[#35d6c0] shrink-0">
+                        <Lock className="w-6 h-6" />
+                      </div>
+                      <div>
+                        <div className="flex items-center space-x-2">
+                          <span className="text-3xl font-black text-white font-mono">
+                            {fixedQtyValue.toLocaleString()}
                           </span>
-                        )}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
+                          <span className="text-xs font-black text-[#35d6c0] uppercase tracking-wider bg-[#35d6c0]/15 px-2.5 py-0.5 rounded-full border border-[#35d6c0]/30">
+                            {isFreeService ? '🎁 100% Free Trial' : 'Preset Package'}
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-slate-400 mt-0.5">
+                          Fixed order allocation configured by administrator.
+                        </p>
+                      </div>
+                    </div>
 
-              {/* Quick Increment Adders */}
-              <div className="mt-2 flex items-center gap-1.5">
-                <span className="text-[10px] text-slate-400 font-semibold uppercase">Add:</span>
-                {[500, 1000, 2500, 5000].map(inc => (
-                  <button
-                    key={inc}
-                    type="button"
-                    onClick={() => setQuantity(prev => Math.min(activeService?.max || 100000, prev + inc))}
-                    className="px-2 py-1 rounded-lg bg-[#0d1224] border border-[#1e2646] hover:border-[#35d6c0]/40 text-[11px] font-semibold text-slate-300 transition-colors flex items-center space-x-0.5 active:translate-y-0.5"
-                  >
-                    <Plus className="w-3 h-3 text-[#35d6c0]" />
-                    <span>{inc.toLocaleString()}</span>
-                  </button>
-                ))}
-              </div>
+                    <div className="text-right">
+                      <span className="text-[10px] uppercase font-bold text-slate-400 block">Package Cost</span>
+                      <span className="text-lg font-black text-[#35d6c0] font-mono">
+                        {isFreeService ? '₹0.00 FREE' : `₹${calculatedCharge.toFixed(2)}`}
+                      </span>
+                    </div>
+                  </div>
+
+                  <p className="text-[11px] text-[#35d6c0] font-semibold flex items-center space-x-1.5 bg-[#0d1224]/80 p-2 rounded-xl border border-[#1e2646]">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-[#35d6c0] shrink-0" />
+                    <span>This promotional service only fulfills exactly <strong>{fixedQtyValue.toLocaleString()} units</strong>. Custom quantity entry is disabled.</span>
+                  </p>
+                </div>
+              ) : (
+                <div>
+                  {/* Number Input with 3D Depth - 100% CUTABLE & BACKSPACEABLE */}
+                  <div className="relative">
+                    <input
+                      type="number"
+                      min={activeService?.min || 50}
+                      max={activeService?.max || 1000000}
+                      step={50}
+                      value={quantityInput}
+                      onChange={(e) => setQuantityInput(e.target.value)}
+                      onBlur={() => {
+                        if (!quantityInput.trim()) {
+                          setQuantityInput(String(activeService?.min || 50));
+                        } else {
+                          const v = parseInt(quantityInput, 10);
+                          if (isNaN(v) || v < (activeService?.min || 1)) {
+                            setQuantityInput(String(activeService?.min || 50));
+                          } else if (v > (activeService?.max || 1000000)) {
+                            setQuantityInput(String(activeService?.max || 1000000));
+                          }
+                        }
+                      }}
+                      placeholder="Enter quantity..."
+                      className="w-full bg-[#0d1224] border border-[#252f52] rounded-2xl px-4 py-3 text-2xl font-black text-white focus:outline-none focus:border-[#35d6c0] transition-colors shadow-inner font-mono"
+                    />
+                    <div className="absolute right-4 top-3.5 text-xs text-slate-400 font-bold uppercase tracking-wider">
+                      Units
+                    </div>
+                  </div>
+
+                  {/* Direct Preset Buttons with 3D Tactile Styling */}
+                  <div className="mt-3">
+                    <div className="flex flex-wrap gap-1.5">
+                      {[100, 500, 1000, 2500, 5000, 10000, 20000].map(amt => {
+                        const isSelected = quantity === amt;
+                        const isHalf = amt === 500;
+                        return (
+                          <button
+                            key={amt}
+                            type="button"
+                            onClick={() => setQuantityInput(amt.toString())}
+                            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center space-x-1.5 active:translate-y-0.5 ${
+                              isSelected
+                                ? 'bg-gradient-to-b from-[#35d6c0] via-[#2cc3b0] to-[#1ea897] text-[#09131d] font-black shadow-md shadow-[#35d6c0]/25 border-t border-white/50'
+                                : 'bg-[#0d1224] border border-[#1e2646] hover:border-[#35d6c0]/40 text-slate-300 hover:text-white'
+                            }`}
+                          >
+                            <span>{amt.toLocaleString()}</span>
+                            {isHalf && (
+                              <span className={`text-[9px] px-1 py-0.2 rounded font-extrabold uppercase ${
+                                isSelected ? 'bg-black/20 text-black' : 'bg-[#35d6c0]/20 text-[#35d6c0]'
+                              }`}>
+                                50% Base
+                              </span>
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Quick Increment Adders */}
+                  <div className="mt-2 flex items-center gap-1.5">
+                    <span className="text-[10px] text-slate-400 font-semibold uppercase">Add:</span>
+                    {[500, 1000, 2500, 5000].map(inc => (
+                      <button
+                        key={inc}
+                        type="button"
+                        onClick={() => setQuantityInput(prev => {
+                          const cur = parseInt(prev, 10) || 0;
+                          return Math.min(activeService?.max || 100000, cur + inc).toString();
+                        })}
+                        className="px-2 py-1 rounded-lg bg-[#0d1224] border border-[#1e2646] hover:border-[#35d6c0]/40 text-[11px] font-semibold text-slate-300 transition-colors flex items-center space-x-0.5 active:translate-y-0.5"
+                      >
+                        <Plus className="w-3 h-3 text-[#35d6c0]" />
+                        <span>{inc.toLocaleString()}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               {/* ✨ LIVE AUTOMATIC CALCULATION CARD (#35d6c0 & 3D VIBE) ✨ */}
               <div className="mt-3.5 p-4 rounded-2xl bg-gradient-to-b from-[#141a33] to-[#0d1224] border border-[#252f52] shadow-inner text-xs space-y-2">

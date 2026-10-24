@@ -102,6 +102,10 @@
     "/tickets/{ticketId}": {
       "schema": "SupportTicket",
       "description": "Customer support inquiries"
+    },
+    "/payments/{paymentId}": {
+      "schema": "Payment",
+      "description": "UPI payment verification requests"
     }
   }
 }

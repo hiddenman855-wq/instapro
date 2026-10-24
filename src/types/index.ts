@@ -39,6 +39,7 @@ export interface GrowthService {
   description: string;
   active: boolean;
   isFree?: boolean; // explicitly marks 100% free / trial service
+  fixedQuantity?: number; // When set (e.g. for free or promo services), customers can only order this exact preset quantity
 }
 
 export type OrderStatus = 'pending' | 'processing' | 'in_progress' | 'completed' | 'canceled';

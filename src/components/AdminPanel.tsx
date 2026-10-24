@@ -51,6 +51,7 @@ export const AdminPanel: React.FC = () => {
     replyToTicket,
     services,
     updateServiceRate,
+    updateServiceConfig,
     addNewService,
     adminAccounts,
     allUsers,
@@ -133,11 +134,22 @@ export const AdminPanel: React.FC = () => {
   const [newSrvSpeed, setNewSrvSpeed] = useState('20K/Day');
   const [newSrvGuarantee, setNewSrvGuarantee] = useState('30 Days Refill');
   const [newSrvIsFree, setNewSrvIsFree] = useState(false);
+  const [newSrvFixedQtyEnabled, setNewSrvFixedQtyEnabled] = useState(false);
+  const [newSrvFixedQtyStr, setNewSrvFixedQtyStr] = useState('50');
   const [adminCategoryFilter, setAdminCategoryFilter] = useState<'all' | ServiceCategory>('all');
 
-  // Service Edit State
+  // Service Edit State with cutable string inputs
   const [editingServiceId, setEditingServiceId] = useState<string | null>(null);
-  const [editRate, setEditRate] = useState<number>(149.00);
+  const [editRateStr, setEditRateStr] = useState<string>('149.00');
+  const [editIsFree, setEditIsFree] = useState<boolean>(false);
+  const [editFixedQtyEnabled, setEditFixedQtyEnabled] = useState<boolean>(false);
+  const [editFixedQtyStr, setEditFixedQtyStr] = useState<string>('50');
+  const [editMinStr, setEditMinStr] = useState<string>('50');
+  const [editMaxStr, setEditMaxStr] = useState<string>('50000');
+
+  // Orders Queue Filters
+  const [orderSearch, setOrderSearch] = useState('');
+  const [orderStatusFilter, setOrderStatusFilter] = useState<'all' | GrowthOrder['status']>('all');
 
   // Generate dynamic QR preview for Super Admin
   React.useEffect(() => {
@@ -298,29 +310,75 @@ export const AdminPanel: React.FC = () => {
     e.preventDefault();
     if (!newSrvName.trim()) return;
 
+    const fixedQty = (newSrvFixedQtyEnabled || newSrvIsFree) ? (parseInt(newSrvFixedQtyStr, 10) || 50) : undefined;
+
     await addNewService({
       name: newSrvName.trim(),
       category: newSrvIsFree ? 'free' : newSrvCategory,
       ratePer1000: newSrvIsFree ? 0 : newSrvRate,
-      min: newSrvMin,
-      max: newSrvMax,
+      min: fixedQty ? Math.min(newSrvMin, fixedQty) : newSrvMin,
+      max: fixedQty ? Math.max(newSrvMax, fixedQty) : newSrvMax,
       speed: newSrvSpeed || (newSrvIsFree ? 'Instant 1–2 Min' : '20K/Day'),
       guarantee: newSrvGuarantee || (newSrvIsFree ? '100% Free Sample' : '30 Days Refill'),
       description: newSrvIsFree
         ? 'Complimentary trial package configured by Super Admin (₹0.00).'
         : 'Custom Instagram service configured by Super Admin.',
       active: true,
-      isFree: newSrvIsFree
+      isFree: newSrvIsFree,
+      fixedQuantity: fixedQty
     });
 
     setShowAddService(false);
     setNewSrvName('');
     setNewSrvIsFree(false);
+    setNewSrvFixedQtyEnabled(false);
+  };
+
+  const handleStartEditService = (srv: GrowthService) => {
+    setEditingServiceId(srv.id);
+    setEditRateStr(srv.ratePer1000.toString());
+    setEditIsFree(Boolean(srv.isFree || srv.ratePer1000 === 0));
+    setEditFixedQtyEnabled(Boolean(srv.fixedQuantity || srv.isFree));
+    setEditFixedQtyStr(String(srv.fixedQuantity || (srv.isFree ? 50 : 100)));
+    setEditMinStr(String(srv.min));
+    setEditMaxStr(String(srv.max));
+  };
+
+  const handleSaveServiceConfig = async (srvId: string) => {
+    const rate = editIsFree ? 0 : parseFloat(editRateStr) || 0;
+    const fixedQty = (editFixedQtyEnabled || editIsFree) ? (parseInt(editFixedQtyStr, 10) || 50) : undefined;
+    const min = parseInt(editMinStr, 10) || 10;
+    const max = parseInt(editMaxStr, 10) || 50000;
+
+    await updateServiceConfig(srvId, {
+      ratePer1000: rate,
+      isFree: editIsFree,
+      category: editIsFree ? 'free' : undefined,
+      fixedQuantity: fixedQty,
+      min: fixedQty ? Math.min(min, fixedQty) : min,
+      max: fixedQty ? Math.max(max, fixedQty) : max,
+    });
+    setEditingServiceId(null);
   };
 
   const pendingPayments = payments.filter(p => p.status === 'pending');
   const pendingOrders = orders.filter(o => o.status === 'pending' || o.status === 'processing');
   const openTickets = tickets.filter(t => t.status === 'open');
+
+  // Filtered orders for Admin Queue
+  const filteredOrders = orders.filter(order => {
+    if (orderStatusFilter !== 'all' && order.status !== orderStatusFilter) return false;
+    if (orderSearch.trim()) {
+      const q = orderSearch.toLowerCase();
+      return (
+        order.id.toLowerCase().includes(q) ||
+        order.target.toLowerCase().includes(q) ||
+        order.serviceName.toLowerCase().includes(q) ||
+        order.userEmail.toLowerCase().includes(q)
+      );
+    }
+    return true;
+  });
 
   // Filtered payments for Super Admin
   const filteredPayments = payments.filter(p => {
@@ -1259,53 +1317,147 @@ export const AdminPanel: React.FC = () => {
          ========================================================================= */}
       {activeTab === 'queue' && (
         <div className="space-y-4">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div>
-              <h2 className="text-base font-black text-white">Live Orders Fulfillment Queue</h2>
+              <h2 className="text-base font-black text-white flex items-center space-x-2">
+                <ShoppingBag className="w-5 h-5 text-rose-400" />
+                <span>All Orders Fulfillment Queue</span>
+                <span className="text-xs font-mono font-bold px-2 py-0.5 rounded-full bg-rose-500/15 text-rose-300 border border-rose-500/30">
+                  {filteredOrders.length} of {orders.length} orders
+                </span>
+              </h2>
               <p className="text-xs text-zinc-400">Update order status and track fulfillment in Indian Rupees (₹)</p>
             </div>
-            <span className="text-xs text-zinc-400">Total: {orders.length} orders</span>
+
+            <div className="flex flex-wrap items-center gap-2">
+              {/* Search box */}
+              <div className="relative">
+                <input
+                  type="text"
+                  value={orderSearch}
+                  onChange={(e) => setOrderSearch(e.target.value)}
+                  placeholder="Search target, ID, email..."
+                  className="bg-zinc-950 border border-zinc-800 rounded-xl pl-9 pr-3 py-1.5 text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-rose-500 transition-colors w-44 sm:w-56"
+                />
+                <Search className="w-3.5 h-3.5 text-zinc-500 absolute left-3 top-2.5" />
+              </div>
+
+              {/* Status filter buttons */}
+              <div className="flex items-center bg-zinc-950 border border-zinc-800 p-1 rounded-xl overflow-x-auto">
+                {(['all', 'in_progress', 'completed', 'processing', 'pending', 'canceled'] as const).map(st => (
+                  <button
+                    key={st}
+                    onClick={() => setOrderStatusFilter(st)}
+                    className={`px-2.5 py-1 rounded-lg text-xs font-bold capitalize transition-all whitespace-nowrap ${
+                      orderStatusFilter === st
+                        ? 'bg-rose-500 text-white font-black shadow-sm'
+                        : 'text-zinc-400 hover:text-white'
+                    }`}
+                  >
+                    {st === 'all' ? 'All' : st.replace('_', ' ')}
+                  </button>
+                ))}
+              </div>
+            </div>
           </div>
 
           <div className="bg-zinc-900/90 border border-zinc-800 rounded-3xl overflow-hidden shadow-xl divide-y divide-zinc-800">
-            {orders.map(order => (
-              <div key={order.id} className="p-4 sm:p-5 flex flex-col lg:flex-row lg:items-center justify-between gap-4 hover:bg-zinc-800/20 transition-colors">
-                <div className="space-y-1">
-                  <div className="flex items-center space-x-2">
-                    <span className="font-mono text-xs font-bold text-rose-400 bg-rose-500/10 px-2 py-0.5 rounded-lg border border-rose-500/20">
-                      {order.id}
-                    </span>
-                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${
-                      order.status === 'completed' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' :
-                      order.status === 'in_progress' ? 'bg-blue-500/10 text-blue-400 border border-blue-500/20' :
-                      order.status === 'processing' ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20' :
-                      'bg-zinc-800 text-zinc-400'
-                    }`}>
-                      {order.status.replace('_', ' ')}
-                    </span>
-                    <span className="text-xs text-zinc-400">{order.userEmail}</span>
-                  </div>
-                  <h4 className="text-sm font-bold text-white">{order.serviceName}</h4>
-                  <p className="text-xs text-rose-300 font-mono">
-                    Target: {order.target} • Quantity: {order.quantity.toLocaleString()} • Charge: ₹{order.charge.toFixed(2)}
-                  </p>
-                </div>
-
-                <div className="flex items-center space-x-2">
-                  <select
-                    value={order.status}
-                    onChange={(e) => updateOrderStatus(order.id, e.target.value as GrowthOrder['status'])}
-                    className="bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-1.5 text-xs text-white font-medium"
+            {filteredOrders.length === 0 ? (
+              <div className="p-12 text-center space-y-3">
+                <ShoppingBag className="w-8 h-8 text-zinc-600 mx-auto" />
+                <p className="text-sm font-bold text-white">No orders matching the current criteria</p>
+                <p className="text-xs text-zinc-400">
+                  {orderSearch || orderStatusFilter !== 'all'
+                    ? 'Try clearing the search or status filter to see all orders.'
+                    : 'No orders have been recorded in the platform.'}
+                </p>
+                {(orderSearch || orderStatusFilter !== 'all') && (
+                  <button
+                    onClick={() => {
+                      setOrderSearch('');
+                      setOrderStatusFilter('all');
+                    }}
+                    className="px-4 py-2 rounded-xl bg-rose-500 text-white text-xs font-bold"
                   >
-                    <option value="pending">Pending</option>
-                    <option value="processing">Processing</option>
-                    <option value="in_progress">In Progress</option>
-                    <option value="completed">Completed</option>
-                    <option value="canceled">Canceled</option>
-                  </select>
-                </div>
+                    Reset Order Filters
+                  </button>
+                )}
               </div>
-            ))}
+            ) : (
+              filteredOrders.map(order => {
+                const delivered = order.quantity - order.remains;
+                const percent = Math.min(100, Math.max(0, Math.round((delivered / order.quantity) * 100)));
+
+                return (
+                  <div key={order.id} className="p-4 sm:p-5 flex flex-col lg:flex-row lg:items-center justify-between gap-4 hover:bg-zinc-800/20 transition-colors">
+                    <div className="space-y-1.5 flex-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="font-mono text-xs font-bold text-rose-400 bg-rose-500/10 px-2 py-0.5 rounded-lg border border-rose-500/20">
+                          {order.id}
+                        </span>
+                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${
+                          order.status === 'completed' ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 font-black' :
+                          order.status === 'in_progress' ? 'bg-blue-500/15 text-blue-400 border border-blue-500/30' :
+                          order.status === 'processing' ? 'bg-amber-500/15 text-amber-400 border border-amber-500/30' :
+                          'bg-zinc-800 text-zinc-400'
+                        }`}>
+                          {order.status.replace('_', ' ')}
+                        </span>
+                        <span className="text-xs text-zinc-400">{order.userEmail}</span>
+                        <span className="text-[11px] text-zinc-500">
+                          {new Date(order.createdAt).toLocaleDateString()} {new Date(order.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        </span>
+                      </div>
+                      <h4 className="text-sm font-bold text-white">{order.serviceName}</h4>
+                      <p className="text-xs text-rose-300 font-mono flex flex-wrap items-center gap-2">
+                        <span className="bg-zinc-950 px-2 py-0.5 rounded border border-zinc-800 text-zinc-200">
+                          {order.target}
+                        </span>
+                        <span>•</span>
+                        <span>Quantity: <strong className="text-white">{order.quantity.toLocaleString()}</strong></span>
+                        <span>•</span>
+                        <span>Charge: <strong className="text-emerald-400">{order.charge === 0 ? '₹0.00 (FREE)' : `₹${order.charge.toFixed(2)}`}</strong></span>
+                      </p>
+                    </div>
+
+                    <div className="flex flex-col sm:flex-row sm:items-center gap-4">
+                      {/* Progress bar */}
+                      <div className="w-48 space-y-1">
+                        <div className="flex justify-between text-[11px]">
+                          <span className="text-zinc-500">Progress</span>
+                          <span className="font-bold text-zinc-300">{percent}% ({delivered.toLocaleString()}/{order.quantity.toLocaleString()})</span>
+                        </div>
+                        <div className="w-full bg-zinc-950 h-2 rounded-full overflow-hidden border border-zinc-800">
+                          <div
+                            className="bg-gradient-to-r from-emerald-500 to-teal-400 h-full rounded-full transition-all duration-500"
+                            style={{ width: `${percent}%` }}
+                          />
+                        </div>
+                        <div className="flex justify-between text-[10px] text-zinc-500">
+                          <span>Start: {order.startCount}</span>
+                          <span>Remains: {order.remains.toLocaleString()}</span>
+                        </div>
+                      </div>
+
+                      {/* Status select */}
+                      <div className="flex items-center space-x-2">
+                        <select
+                          value={order.status}
+                          onChange={(e) => updateOrderStatus(order.id, e.target.value as GrowthOrder['status'])}
+                          className="bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-1.5 text-xs text-white font-medium focus:outline-none focus:border-rose-500"
+                        >
+                          <option value="pending">Pending</option>
+                          <option value="processing">Processing</option>
+                          <option value="in_progress">In Progress</option>
+                          <option value="completed">Completed</option>
+                          <option value="canceled">Canceled</option>
+                        </select>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })
+            )}
           </div>
         </div>
       )}
@@ -1547,6 +1699,173 @@ export const AdminPanel: React.FC = () => {
               .filter(s => adminCategoryFilter === 'all' || s.category === adminCategoryFilter || (adminCategoryFilter === 'free' && (s.isFree || s.ratePer1000 === 0)))
               .map(srv => {
                 const isFree = Boolean(srv.isFree || srv.ratePer1000 === 0 || srv.category === 'free');
+                const isEditing = editingServiceId === srv.id;
+
+                if (isEditing && isSuperAdmin) {
+                  return (
+                    <div key={srv.id} className="p-5 bg-[#12172b] border-2 border-[#35d6c0] rounded-2xl space-y-4 my-2 shadow-2xl">
+                      <div className="flex items-center justify-between border-b border-[#20294d] pb-3">
+                        <div>
+                          <span className="text-[10px] font-black uppercase text-[#35d6c0] tracking-wider block">
+                            Service Pricing &amp; Free Package Settings
+                          </span>
+                          <h4 className="text-sm font-bold text-white">{srv.name}</h4>
+                        </div>
+                        <span className="text-xs font-mono text-slate-400">ID: {srv.id}</span>
+                      </div>
+
+                      {/* Price Input - CUTABLE */}
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                        <div>
+                          <label className="text-xs font-bold text-slate-300 block mb-1">
+                            Price / Rate per 1,000 (INR ₹)
+                          </label>
+                          <div className="relative">
+                            <span className="absolute left-3 top-2.5 text-xs text-slate-400 font-bold">₹</span>
+                            <input
+                              type="number"
+                              step="0.01"
+                              min="0"
+                              disabled={editIsFree}
+                              value={editRateStr}
+                              onChange={(e) => setEditRateStr(e.target.value)}
+                              placeholder="0.00"
+                              className="w-full bg-[#0d1224] border border-[#252f52] rounded-xl pl-7 pr-3 py-2 text-sm font-bold text-white focus:outline-none focus:border-[#35d6c0] disabled:opacity-40"
+                            />
+                          </div>
+                          <p className="text-[10px] text-slate-500 mt-1">
+                            {editIsFree ? 'Free trial mode active (₹0.00)' : 'Cutable number input for live pricing'}
+                          </p>
+                        </div>
+
+                        <div>
+                          <label className="text-xs font-bold text-slate-300 block mb-1">
+                            Minimum Order Quantity
+                          </label>
+                          <input
+                            type="number"
+                            value={editMinStr}
+                            onChange={(e) => setEditMinStr(e.target.value)}
+                            placeholder="Min"
+                            className="w-full bg-[#0d1224] border border-[#252f52] rounded-xl px-3 py-2 text-sm font-bold text-white focus:outline-none focus:border-[#35d6c0]"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="text-xs font-bold text-slate-300 block mb-1">
+                            Maximum Order Quantity
+                          </label>
+                          <input
+                            type="number"
+                            value={editMaxStr}
+                            onChange={(e) => setEditMaxStr(e.target.value)}
+                            placeholder="Max"
+                            className="w-full bg-[#0d1224] border border-[#252f52] rounded-xl px-3 py-2 text-sm font-bold text-white focus:outline-none focus:border-[#35d6c0]"
+                          />
+                        </div>
+                      </div>
+
+                      {/* ✨ AT THE DOWN: OPTION FOR FREE & FIXED QUANTITY ✨ */}
+                      <div className="pt-3 border-t border-[#20294d] bg-[#0d1224] p-4 rounded-xl border border-[#252f52] space-y-3">
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                          <label className="flex items-center space-x-2.5 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={editIsFree}
+                              onChange={(e) => {
+                                const checked = e.target.checked;
+                                setEditIsFree(checked);
+                                if (checked) {
+                                  setEditRateStr('0');
+                                  setEditFixedQtyEnabled(true);
+                                  if (!editFixedQtyStr || editFixedQtyStr === '0') {
+                                    setEditFixedQtyStr('50');
+                                  }
+                                }
+                              }}
+                              className="w-4 h-4 accent-[#35d6c0] rounded cursor-pointer"
+                            />
+                            <span className="text-xs font-bold text-white flex items-center space-x-1.5">
+                              <Gift className="w-4 h-4 text-[#35d6c0]" />
+                              <span>Make this service 100% FREE (₹0.00 Trial)</span>
+                            </span>
+                          </label>
+
+                          {editIsFree && (
+                            <span className="text-[10px] font-black uppercase text-[#35d6c0] bg-[#35d6c0]/15 px-2.5 py-0.5 rounded-full border border-[#35d6c0]/30">
+                              Free Promotion
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Fixed Quantity: "there they cant add any number of quantity which they want, they just can order the quantity I can set from before" */}
+                        <div className="pt-2 border-t border-[#1e2646] space-y-2">
+                          <label className="flex items-center space-x-2.5 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={editFixedQtyEnabled || editIsFree}
+                              onChange={(e) => {
+                                if (editIsFree) return;
+                                setEditFixedQtyEnabled(e.target.checked);
+                              }}
+                              disabled={editIsFree}
+                              className="w-4 h-4 accent-[#35d6c0] rounded cursor-pointer"
+                            />
+                            <span className="text-xs font-bold text-white flex items-center space-x-1.5">
+                              <Lock className="w-3.5 h-3.5 text-[#35d6c0]" />
+                              <span>Lock Order Quantity (Users cannot add arbitrary custom quantities)</span>
+                            </span>
+                          </label>
+
+                          {(editFixedQtyEnabled || editIsFree) && (
+                            <div className="bg-[#141a33] p-3 rounded-xl border border-[#35d6c0]/30 space-y-1.5">
+                              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                                <label className="text-[11px] font-bold text-[#35d6c0] uppercase tracking-wider">
+                                  Preset Fixed Quantity Allowed:
+                                </label>
+                                <div className="relative w-44">
+                                  <input
+                                    type="number"
+                                    min="1"
+                                    value={editFixedQtyStr}
+                                    onChange={(e) => setEditFixedQtyStr(e.target.value)}
+                                    placeholder="e.g. 50"
+                                    className="w-full bg-[#0d1224] border border-[#35d6c0] rounded-xl px-3 py-1.5 text-sm font-black text-white focus:outline-none"
+                                  />
+                                  <span className="absolute right-3 top-2 text-[10px] text-slate-400 font-bold uppercase">
+                                    Units
+                                  </span>
+                                </div>
+                              </div>
+                              <p className="text-[11px] text-slate-300">
+                                Users on the order panel <strong>will only be able to order this exact quantity</strong> ({editFixedQtyStr || 50} units). The custom quantity input will be locked to prevent users from adding any number they want.
+                              </p>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Save & Cancel Buttons */}
+                      <div className="flex justify-end gap-2 pt-1">
+                        <button
+                          type="button"
+                          onClick={() => setEditingServiceId(null)}
+                          className="px-4 py-2 rounded-xl bg-[#0d1224] hover:bg-[#1a2240] text-slate-300 text-xs font-semibold"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleSaveServiceConfig(srv.id)}
+                          className="px-5 py-2 rounded-xl bg-gradient-to-b from-[#35d6c0] to-[#1ea897] text-[#09131d] text-xs font-black shadow-lg shadow-[#35d6c0]/25 border-t border-white/50 active:translate-y-0.5"
+                        >
+                          Save Service Settings
+                        </button>
+                      </div>
+                    </div>
+                  );
+                }
+
                 return (
                   <div key={srv.id} className="p-4 sm:p-5 flex flex-col md:flex-row md:items-center justify-between gap-4 hover:bg-[#1a213d] transition-colors">
                     <div className="space-y-1">
@@ -1558,6 +1877,12 @@ export const AdminPanel: React.FC = () => {
                         }`}>
                           {isFree ? '🎁 FREE TRIAL' : srv.category}
                         </span>
+                        {srv.fixedQuantity && (
+                          <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-md bg-purple-500/15 text-purple-300 border border-purple-500/30 flex items-center space-x-1">
+                            <Lock className="w-3 h-3" />
+                            <span>Fixed: {srv.fixedQuantity.toLocaleString()} Qty</span>
+                          </span>
+                        )}
                         <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md ${
                           srv.active ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30' : 'bg-red-500/15 text-red-400 border border-red-500/30'
                         }`}>
@@ -1568,65 +1893,36 @@ export const AdminPanel: React.FC = () => {
                         <span>{srv.name}</span>
                         {isFree && <span className="text-[10px] text-[#35d6c0] font-black">(₹0.00)</span>}
                       </h4>
-                      <p className="text-xs text-slate-400">{srv.speed} • Min: {srv.min.toLocaleString()} • Max: {srv.max.toLocaleString()}</p>
+                      <p className="text-xs text-slate-400">
+                        {srv.speed} • Min: {srv.min.toLocaleString()} • Max: {srv.max.toLocaleString()}
+                        {srv.fixedQuantity && <strong className="text-[#35d6c0]"> • Fixed Order Qty: {srv.fixedQuantity.toLocaleString()}</strong>}
+                      </p>
                     </div>
 
                     {isSuperAdmin ? (
                       <div className="flex items-center space-x-3">
-                        {editingServiceId === srv.id ? (
-                          <div className="flex items-center space-x-2">
-                            <input
-                              type="number"
-                              step="0.01"
-                              min="0"
-                              value={editRate}
-                              onChange={(e) => setEditRate(Number(e.target.value))}
-                              className="w-24 bg-[#0d1224] border border-[#35d6c0] rounded-xl px-2 py-1.5 text-xs font-bold text-white focus:outline-none"
-                            />
-                            <button
-                              onClick={() => {
-                                updateServiceRate(srv.id, editRate);
-                                setEditingServiceId(null);
-                              }}
-                              className="px-3 py-1.5 rounded-xl bg-[#35d6c0] text-[#09131d] text-xs font-bold"
-                            >
-                              Save
-                            </button>
-                            <button
-                              onClick={() => setEditingServiceId(null)}
-                              className="px-2 py-1.5 rounded-xl bg-[#0d1224] text-slate-400 text-xs"
-                            >
-                              Cancel
-                            </button>
-                          </div>
-                        ) : (
-                          <div className="flex items-center space-x-3">
-                            <div className="text-right">
-                              <span className="text-[10px] text-slate-400 uppercase block font-bold">Rate/1K</span>
-                              <span className={`text-base font-black ${isFree ? 'text-[#35d6c0]' : 'text-white'}`}>
-                                {isFree ? '₹0.00 (FREE)' : `₹${srv.ratePer1000.toFixed(2)}`}
-                              </span>
-                            </div>
-                            <button
-                              onClick={() => {
-                                setEditingServiceId(srv.id);
-                                setEditRate(srv.ratePer1000);
-                              }}
-                              className="p-2 rounded-xl bg-[#0d1224] hover:bg-[#141b33] border border-[#252f52] text-slate-300"
-                              title="Edit Rate"
-                            >
-                              <Edit2 className="w-3.5 h-3.5" />
-                            </button>
-                            <button
-                              onClick={() => updateServiceRate(srv.id, srv.ratePer1000, !srv.active)}
-                              className={`px-2.5 py-1.5 rounded-xl text-xs font-bold transition-colors ${
-                                srv.active ? 'bg-[#0d1224] text-slate-400 border border-[#252f52]' : 'bg-[#35d6c0]/20 text-[#35d6c0] border border-[#35d6c0]/40'
-                              }`}
-                            >
-                              {srv.active ? 'Disable' : 'Enable'}
-                            </button>
-                          </div>
-                        )}
+                        <div className="text-right">
+                          <span className="text-[10px] text-slate-400 uppercase block font-bold">Rate/1K</span>
+                          <span className={`text-base font-black ${isFree ? 'text-[#35d6c0]' : 'text-white'}`}>
+                            {isFree ? '₹0.00 (FREE)' : `₹${srv.ratePer1000.toFixed(2)}`}
+                          </span>
+                        </div>
+                        <button
+                          onClick={() => handleStartEditService(srv)}
+                          className="px-3 py-1.5 rounded-xl bg-[#0d1224] hover:bg-[#141b33] border border-[#252f52] hover:border-[#35d6c0] text-[#35d6c0] text-xs font-bold flex items-center space-x-1.5 transition-colors"
+                          title="Change Price & Free / Fixed Quantity Settings"
+                        >
+                          <Edit2 className="w-3.5 h-3.5" />
+                          <span>Edit Pricing &amp; Free</span>
+                        </button>
+                        <button
+                          onClick={() => updateServiceRate(srv.id, srv.ratePer1000, !srv.active)}
+                          className={`px-2.5 py-1.5 rounded-xl text-xs font-bold transition-colors ${
+                            srv.active ? 'bg-[#0d1224] text-slate-400 border border-[#252f52]' : 'bg-[#35d6c0]/20 text-[#35d6c0] border border-[#35d6c0]/40'
+                          }`}
+                        >
+                          {srv.active ? 'Disable' : 'Enable'}
+                        </button>
                       </div>
                     ) : (
                       <div className="text-right">

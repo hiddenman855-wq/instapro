@@ -63,10 +63,10 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
-    // SMM Orders
+    // SMM Orders (Public real-time tracking by ID & admin fulfillment queue)
     match /orders/{orderId} {
-      allow read: if (isSignedIn() && resource.data.userId == request.auth.uid) || isAdmin();
-      allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid;
+      allow read: if true;
+      allow create: if true;
       allow update: if isAdmin() || (isSignedIn() && resource.data.userId == request.auth.uid);
       allow delete: if isSuperAdmin();
     }
@@ -74,8 +74,16 @@ service cloud.firestore {
     // Support Tickets
     match /tickets/{ticketId} {
       allow read: if (isSignedIn() && resource.data.userId == request.auth.uid) || isAdmin();
-      allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid;
+      allow create: if true;
       allow update: if isAdmin() || (isSignedIn() && resource.data.userId == request.auth.uid);
+      allow delete: if isSuperAdmin();
+    }
+
+    // UPI Payment verification requests
+    match /payments/{paymentId} {
+      allow read: if true;
+      allow create: if true;
+      allow update: if isSuperAdmin() || isAdmin();
       allow delete: if isSuperAdmin();
     }
   }
