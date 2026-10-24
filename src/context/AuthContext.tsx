@@ -92,16 +92,22 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const [currentUser, setCurrentUser] = useState<AppUser | null>(() => {
     const saved = localStorage.getItem(LS_USER_KEY);
     if (saved) {
-      try { return JSON.parse(saved); } catch {}
+      try {
+        const parsed = JSON.parse(saved);
+        // Security protection: purge any legacy mock super admin so strangers are never logged into admin
+        if (parsed?.uid === 'super-admin-uid-1') {
+          localStorage.removeItem(LS_USER_KEY);
+          return null;
+        }
+        if (parsed?.email && parsed?.uid) {
+          return parsed;
+        }
+      } catch {
+        localStorage.removeItem(LS_USER_KEY);
+      }
     }
-    return {
-      uid: 'super-admin-uid-1',
-      email: SUPER_ADMIN_EMAIL,
-      displayName: 'Super Admin (hiddenman855)',
-      role: 'superadmin',
-      balance: 99999.00,
-      createdAt: new Date().toISOString()
-    };
+    // Strict default: Any new visitor is unauthenticated (null), NOT an administrator!
+    return null;
   });
 
   const [loading, setLoading] = useState<boolean>(true);
@@ -307,6 +313,15 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             createdAt: prev?.createdAt || new Date().toISOString()
           }));
         }
+      } else {
+        // If Firebase auth is signed out, ensure any mock super admin is cleared
+        setCurrentUser(prev => {
+          if (prev?.uid === 'super-admin-uid-1') {
+            localStorage.removeItem(LS_USER_KEY);
+            return null;
+          }
+          return prev;
+        });
       }
       setLoading(false);
     });
@@ -314,9 +329,12 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     return () => unsubscribe();
   }, [adminAccounts]);
 
-  const role = currentUser?.role || 'user';
-  const isSuperAdmin = role === 'superadmin' || currentUser?.email.toLowerCase() === SUPER_ADMIN_EMAIL.toLowerCase();
-  const isAdmin = isSuperAdmin || role === 'admin';
+  const role: UserRole = currentUser?.role || 'user';
+  const isSuperAdmin = Boolean(
+    currentUser &&
+    (currentUser.role === 'superadmin' || currentUser.email?.toLowerCase() === SUPER_ADMIN_EMAIL.toLowerCase())
+  );
+  const isAdmin = Boolean(currentUser && (isSuperAdmin || currentUser.role === 'admin'));
   const isCustomer = !isAdmin;
 
   // Google Login
@@ -501,36 +519,8 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     localStorage.removeItem(LS_USER_KEY);
   };
 
-  const quickLoginAs = (targetRole: UserRole) => {
-    if (targetRole === 'superadmin') {
-      setCurrentUser({
-        uid: 'super-admin-uid-1',
-        email: SUPER_ADMIN_EMAIL,
-        displayName: 'Super Admin (hiddenman855)',
-        role: 'superadmin',
-        balance: 99999.00,
-        createdAt: new Date().toISOString()
-      });
-    } else if (targetRole === 'admin') {
-      const firstAdmin = adminAccounts[0];
-      setCurrentUser({
-        uid: 'admin-01',
-        email: firstAdmin?.email || 'admin@instagrow.com',
-        displayName: firstAdmin?.name || 'Sarah Jenkins (Normal Admin)',
-        role: 'admin',
-        balance: 2500.00,
-        createdAt: new Date().toISOString()
-      });
-    } else {
-      setCurrentUser({
-        uid: 'user-01',
-        email: 'creator_mike@gmail.com',
-        displayName: 'Mike Visuals',
-        role: 'user',
-        balance: 480.00,
-        createdAt: new Date().toISOString()
-      });
-    }
+  const quickLoginAs = (_targetRole: UserRole) => {
+    // Disabled for production security: all admin and user sessions require authentication
   };
 
   // Submit Payment with UTR ID (Customer)

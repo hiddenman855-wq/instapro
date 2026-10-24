@@ -23,9 +23,9 @@ export const RoleGuard: React.FC<RoleGuardProps> = ({
   if (requiredLevel === 'user') {
     hasAccess = !!currentUser;
   } else if (requiredLevel === 'admin') {
-    hasAccess = isAdmin; // both normal admin and superadmin
+    hasAccess = Boolean(currentUser && isAdmin); // strictly require authenticated admin or superadmin
   } else if (requiredLevel === 'superadmin') {
-    hasAccess = isSuperAdmin;
+    hasAccess = Boolean(currentUser && isSuperAdmin);
   }
 
   if (hasAccess) {

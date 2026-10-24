@@ -3,8 +3,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState } from 'react';
-import { AuthProvider } from './context/AuthContext';
+import React, { useState, useEffect } from 'react';
+import { AuthProvider, useAuth } from './context/AuthContext';
 import { Navbar } from './components/Navbar';
 import { CustomerDashboard } from './components/CustomerDashboard';
 import { OrdersList } from './components/OrdersList';
@@ -24,8 +24,17 @@ import {
 } from 'lucide-react';
 
 const MainContent: React.FC = () => {
-  // Always land on user panel ('new-order') by default for all visitors & accounts
+  const { currentUser, isAdmin } = useAuth();
+
+  // Always land on customer user panel ('new-order') by default for all visitors & accounts
   const [currentTab, setCurrentTab] = useState<string>('new-order');
+
+  // Strict route security guard: If non-admin is ever on admin-panel, immediately redirect to user panel ('new-order')
+  useEffect(() => {
+    if (currentTab === 'admin-panel' && (!currentUser || !isAdmin)) {
+      setCurrentTab('new-order');
+    }
+  }, [currentTab, currentUser, isAdmin]);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [isAddFundsModalOpen, setIsAddFundsModalOpen] = useState(false);
   const [addFundsOptions, setAddFundsOptions] = useState<{
